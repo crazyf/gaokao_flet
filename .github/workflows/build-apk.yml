@@ -28,6 +28,12 @@ jobs:
         autoconf libtool pkg-config zlib1g-dev libncurses5-dev \
         libncursesw5-dev cmake libffi-dev libssl-dev
 
+    - name: Setup Android SDK license
+      run: |
+        mkdir -p ~/.android
+        echo -e "8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb78af6dfcb131a6481e\n24333f8a63b6825ea9c5514f83c2829b004d1fee" > ~/.android/repositories.cfg
+        yes | sdkmanager --licenses || true
+
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
