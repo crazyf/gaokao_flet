@@ -1,0 +1,25 @@
+[project]
+name = "gaokao_query"
+version = "1.0.0"
+description = "高考志愿院校专业查询系统"
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [
+    { name = "Your Name", email = "your@email.com" }
+]
+dependencies = [
+    "flet",
+    "pymysql"
+]
+
+[tool.flet]
+org = "com.yourcompany"      # 组织标识，建议用反向域名
+product = "GaokaoQuery"       # 应用名称
+company = "Your Company"      # 公司名称
+copyright = "Copyright (C) 2025"
+
+[tool.flet.app]
+path = "src"                  # 指定源代码目录
+
+[tool.flet.android]
+split_per_abi = true          # 按架构拆分 APK，减小体积

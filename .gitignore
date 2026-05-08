@@ -1,0 +1,9 @@
+venv_kivy/
+venv/
+__pycache__/
+*.pyc
+.buildozer/
+bin/
+.vscode/
+database/*.db
+*.log

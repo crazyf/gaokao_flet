@@ -1,0 +1,16 @@
+.
+├── .vscode
+│   └── settings.json
+├── assets
+│   └── icon.png
+├── buildozer.spec
+├── database
+├── project_structure.txt
+├── pyproject.toml
+├── requirements.txt
+├── src
+│   └── main.py
+└── utils
+    └── db_helper.py
+
+6 directories, 8 files
