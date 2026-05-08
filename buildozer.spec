@@ -15,6 +15,9 @@ android.api = 30
 android.minapi = 21
 android.ndk = 23b
 
+# 添加这行，跳过许可证问题
+android.accept_sdk_license = True
+
 log_level = 2
 
 [buildozer]
