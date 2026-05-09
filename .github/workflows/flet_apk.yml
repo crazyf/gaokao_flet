@@ -23,19 +23,23 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Python dependencies
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install flet pymysql
 
+      - name: Debug file structure
+        run: |
+          pwd
+          ls -la
+          echo "=== searching main.py ==="
+          find . -name "main.py"
+
       - name: Add Flutter to PATH
         run: echo "$HOME/flutter/bin" >> $GITHUB_PATH
 
-      - name: Build APK (non-interactive)
-        run: |
-          yes | flet build apk --verbose
-          # 或者用 --yes 参数（如果支持）
-          # flet build apk --verbose --yes
+      - name: Build APK
+        run: flet build apk --verbose
 
       - uses: actions/upload-artifact@v4
         with:
