@@ -427,7 +427,7 @@ def main(page: ft.Page):
                     ft.Divider(height=5),
                     ft.Text("年份", size=13, weight=ft.FontWeight.W_500),
                     year_group,
-                    ft.ElevatedButton(
+                    ft.FilledButton(
                         content=ft.Text("查询"), on_click=on_search_click, width=120
                     ),
                 ],
@@ -487,4 +487,4 @@ def main(page: ft.Page):
 
 
 if __name__ == "__main__":
-    ft.app(target=main)
+    ft.app(target=main, view=ft.AppView.FLET_APP)
