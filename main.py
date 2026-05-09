@@ -1,249 +1,490 @@
-"""
-Gaokao Query System - Kivy Version
-"""
-from kivy.app import App
-from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.scrollview import ScrollView
-from kivy.uix.gridlayout import GridLayout
-from kivy.uix.label import Label
-from kivy.uix.textinput import TextInput
-from kivy.uix.button import Button
-from kivy.uix.checkbox import CheckBox
-from kivy.uix.screenmanager import ScreenManager, Screen
-from kivy.core.window import Window
-from kivy.clock import Clock
+import os
+import sys
 
-from utils.db_helper import search_by_score, get_university_details
+import flet as ft
 
-Window.size = (360, 600)
+from utils.db_helper import get_university_details, search_by_score
+
+# 将项目根目录添加到 Python 路径，以便找到 utils 模块
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 
-class MainScreen(Screen):
-    
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        
-        layout = BoxLayout(orientation='vertical', padding=10, spacing=8)
-        
-        # Title
-        layout.add_widget(Label(
-            text='Gaokao Query System',
-            size_hint_y=0.08,
-            font_size=18
-        ))
-        
-        # Input row
-        input_layout = BoxLayout(orientation='horizontal', size_hint_y=0.12, spacing=10)
-        self.score_input = TextInput(hint_text='Score', multiline=False, input_filter='int')
-        self.rank_input = TextInput(hint_text='Rank', multiline=False, input_filter='int')
-        input_layout.add_widget(self.score_input)
-        input_layout.add_widget(self.rank_input)
-        layout.add_widget(input_layout)
-        
-        # University type options
-        type_layout = BoxLayout(orientation='horizontal', size_hint_y=0.1, spacing=8)
-        self.c9_check = CheckBox(active=False, size_hint_x=0.1)
-        type_layout.add_widget(Label(text='985', size_hint_x=0.2))
-        type_layout.add_widget(self.c9_check)
-        
-        self.c211_check = CheckBox(active=False, size_hint_x=0.1)
-        type_layout.add_widget(Label(text='211', size_hint_x=0.2))
-        type_layout.add_widget(self.c211_check)
-        
-        self.double_check = CheckBox(active=False, size_hint_x=0.1)
-        type_layout.add_widget(Label(text='Double First', size_hint_x=0.3))
-        type_layout.add_widget(self.double_check)
-        layout.add_widget(type_layout)
-        
-        # Year selection
-        from kivy.uix.togglebutton import ToggleButton
-        year_layout = BoxLayout(orientation='horizontal', size_hint_y=0.1, spacing=10)
-        year_layout.add_widget(Label(text='Year:', size_hint_x=0.2))
-        self.year_2024 = ToggleButton(text='2024', group='year', state='normal')
-        self.year_2025 = ToggleButton(text='2025', group='year', state='down')
-        year_layout.add_widget(self.year_2024)
-        year_layout.add_widget(self.year_2025)
-        layout.add_widget(year_layout)
-        
-        # Search button
-        self.search_btn = Button(text='Search', size_hint_y=0.08, background_color=(0.2, 0.4, 0.8, 1))
-        self.search_btn.bind(on_press=self.on_search)
-        layout.add_widget(self.search_btn)
-        
-        # Loading indicator
-        self.loading_label = Label(text='Searching...', size_hint_y=0.05, color=(0.5, 0.5, 0.5, 1))
-        self.loading_label.opacity = 0
-        layout.add_widget(self.loading_label)
-        
-        # Results area
-        self.result_layout = GridLayout(cols=1, size_hint_y=None, spacing=5)
-        self.result_layout.bind(minimum_height=self.result_layout.setter('height'))
-        scroll = ScrollView()
-        scroll.add_widget(self.result_layout)
-        layout.add_widget(scroll)
-        
-        self.locations_data = []
-        self.add_widget(layout)
-    
-    def show_loading(self, show=True):
-        self.loading_label.opacity = 1 if show else 0
-        self.search_btn.disabled = show
-    
-    def on_search(self, instance):
-        score = self.score_input.text
-        rank = self.rank_input.text
-        year = '2025' if self.year_2025.state == 'down' else '2024'
-        
-        types = []
-        if self.c9_check.active:
-            types.append('985')
-        if self.c211_check.active:
-            types.append('211')
-        if self.double_check.active:
-            types.append('Double First')
-        
-        if (not score and not rank) or (score and rank):
-            self.show_result_error('Please enter score OR rank only')
+def main(page: ft.Page):
+    page.title = "高考志愿查询系统"
+    page.theme_mode = ft.ThemeMode.LIGHT
+    page.padding = 10
+    page.window_width = None
+    page.window_height = None
+    page.scroll = ft.ScrollMode.AUTO
+
+    # 存储状态
+    current_query_params = {
+        "score": None,
+        "rank": None,
+        "year": "2025",
+        "float_range": 10,
+    }
+
+    # ========== 左侧面板控件 ==========
+    score_input = ft.TextField(
+        label="分数",
+        hint_text="输入分数",
+        width=140,
+        keyboard_type=ft.KeyboardType.NUMBER,
+    )
+    rank_input = ft.TextField(
+        label="排位",
+        hint_text="输入排位",
+        width=140,
+        keyboard_type=ft.KeyboardType.NUMBER,
+    )
+
+    # 院校类型复选框
+    c9_check = ft.Checkbox(label="985", value=False)
+    c211_check = ft.Checkbox(label="211", value=False)
+    double_first_check = ft.Checkbox(label="双一流", value=False)
+
+    # 年份单选
+    year_group = ft.RadioGroup(
+        content=ft.Row(
+            [
+                ft.Radio(value="2024", label="2024年"),
+                ft.Radio(value="2025", label="2025年"),
+            ]
+        ),
+        value="2025",
+    )
+
+    # 地区列表容器
+    locations_container = ft.Column(spacing=8)
+
+    # 右侧面板引用
+    right_panel_content = ft.Column(
+        [
+            ft.Text("请选择院校查看详情", size=18, weight=ft.FontWeight.BOLD),
+            ft.Text("", size=12, color=ft.Colors.BLUE_600),
+            ft.Text(
+                "请从左侧选择地区后，再点击院校名称查看专业详情",
+                color=ft.Colors.GREY_500,
+                size=13,
+            ),
+        ],
+        spacing=15,
+        alignment=ft.MainAxisAlignment.CENTER,
+        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+    )
+
+    right_panel = ft.Card(
+        content=ft.Container(content=right_panel_content, padding=15, height=None),
+        elevation=5,
+        expand=True,
+    )
+
+    # ========== 定义函数 ==========
+    def clear_score(e):
+        if score_input.value:
+            rank_input.value = ""
+            page.update()
+
+    def clear_rank(e):
+        if rank_input.value:
+            score_input.value = ""
+            page.update()
+
+    score_input.on_change = clear_score
+    rank_input.on_change = clear_rank
+
+    def show_university_list(location, universities):
+        """在右侧显示院校列表"""
+        uni_list = ft.Column(spacing=10)
+
+        for uni in universities:
+            uni_card = ft.Container(
+                content=ft.Row(
+                    [
+                        ft.Column(
+                            [
+                                ft.Text(
+                                    uni["name"], size=15, weight=ft.FontWeight.W_500
+                                ),
+                                ft.Text(uni["type"], size=10, color=ft.Colors.GREY_600),
+                            ],
+                            spacing=5,
+                            expand=True,
+                        ),
+                        ft.Text(">", size=16, color=ft.Colors.GREY_400),
+                    ],
+                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                ),
+                padding=ft.padding.symmetric(horizontal=12, vertical=10),
+                bgcolor=ft.Colors.WHITE,
+                border_radius=10,
+                border=ft.border.all(1, ft.Colors.GREY_200),
+                ink=True,
+                on_click=lambda e, name=uni["name"]: show_major_details(name),
+            )
+            uni_list.controls.append(uni_card)
+
+        right_panel.content = ft.Container(
+            content=ft.Column(
+                [
+                    ft.Text(
+                        f"📋 {location} - 院校列表", size=16, weight=ft.FontWeight.BOLD
+                    ),
+                    ft.Divider(),
+                    ft.Container(
+                        content=ft.Column([uni_list], scroll=ft.ScrollMode.AUTO),
+                        height=450,
+                    ),
+                ],
+                spacing=12,
+            ),
+            padding=15,
+        )
+        page.update()
+
+    def show_major_details(university_name):
+        """显示专业详情"""
+        # 显示加载状态
+        right_panel.content = ft.Container(
+            content=ft.Column(
+                [
+                    ft.Text("加载中...", size=16, color=ft.Colors.GREY_500),
+                ],
+                alignment=ft.MainAxisAlignment.CENTER,
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            padding=15,
+            height=400,
+        )
+        page.update()
+
+        # 获取专业详情（真实数据库）
+        try:
+            result = get_university_details(
+                university_name=university_name,
+                year=current_query_params["year"],
+                score=current_query_params["score"],
+                rank=current_query_params["rank"],
+                float_range=current_query_params["float_range"],
+            )
+        except Exception as e:
+            result = []
+            print(f"查询出错: {e}")
+
+        if not result:
+            right_panel.content = ft.Container(
+                content=ft.Column(
+                    [
+                        ft.Text("暂无专业数据", size=16, color=ft.Colors.GREY_500),
+                        ft.TextButton(
+                            content=ft.Text("← 返回"),
+                            on_click=lambda e: (
+                                show_university_list_for_current_location()
+                            ),
+                        ),
+                    ],
+                    alignment=ft.MainAxisAlignment.CENTER,
+                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
+                padding=15,
+            )
+            page.update()
             return
-        
-        self.show_loading(True)
-        self.result_layout.clear_widgets()
-        Clock.schedule_once(lambda dt: self.do_search(score, rank, year, types), 0.1)
-    
-    def do_search(self, score, rank, year, types):
+
+        # 创建表格
+        columns = [
+            ft.DataColumn(ft.Text("序号", weight=ft.FontWeight.BOLD, size=12)),
+            ft.DataColumn(ft.Text("专业名称", weight=ft.FontWeight.BOLD, size=12)),
+            ft.DataColumn(ft.Text("2024录取人数", weight=ft.FontWeight.BOLD, size=11)),
+            ft.DataColumn(ft.Text("2025录取人数", weight=ft.FontWeight.BOLD, size=11)),
+            ft.DataColumn(ft.Text("投档最低位次", weight=ft.FontWeight.BOLD, size=11)),
+            ft.DataColumn(ft.Text("投档最低分", weight=ft.FontWeight.BOLD, size=11)),
+        ]
+
+        rows = []
+        for item in result:
+            rows.append(
+                ft.DataRow(
+                    cells=[
+                        ft.DataCell(ft.Text(str(item["序号"]), size=11)),
+                        ft.DataCell(ft.Text(item["专业名称"], size=11)),
+                        ft.DataCell(ft.Text(str(item["2024录取人数"]), size=11)),
+                        ft.DataCell(ft.Text(str(item["2025录取人数"]), size=11)),
+                        ft.DataCell(ft.Text(str(item["投档最低位次"]), size=11)),
+                        ft.DataCell(ft.Text(str(item["投档最低分"]), size=11)),
+                    ]
+                )
+            )
+
+        detail_table = ft.DataTable(columns=columns, rows=rows, column_spacing=12)
+
+        back_button = ft.TextButton(
+            content=ft.Text("← 返回"),
+            on_click=lambda e: show_university_list_for_current_location(),
+            style=ft.ButtonStyle(
+                color=ft.Colors.BLUE_600, bgcolor=ft.Colors.TRANSPARENT
+            ),
+        )
+
+        # 显示筛选信息
+        filter_text = ""
+        if current_query_params["score"]:
+            min_score = (
+                current_query_params["score"] - current_query_params["float_range"]
+            )
+            max_score = (
+                current_query_params["score"] + current_query_params["float_range"]
+            )
+            filter_text = f"📌 分数范围: {min_score} - {max_score} 分"
+        elif current_query_params["rank"]:
+            min_rank = current_query_params["rank"] - 1000
+            max_rank = current_query_params["rank"] + 1000
+            filter_text = f"📌 排位范围: {min_rank} - {max_rank}"
+
+        right_panel.content = ft.Container(
+            content=ft.Column(
+                [
+                    ft.Row(
+                        [back_button],
+                        alignment=ft.MainAxisAlignment.START,
+                    ),
+                    ft.Text(
+                        f"📖 {university_name}",
+                        size=16,
+                        weight=ft.FontWeight.BOLD,
+                    ),
+                    ft.Text(
+                        filter_text,
+                        size=11,
+                        color=ft.Colors.BLUE_600,
+                    )
+                    if filter_text
+                    else ft.Container(),
+                    ft.Divider(),
+                    ft.Container(
+                        content=ft.Column([detail_table], scroll=ft.ScrollMode.AUTO),
+                        height=400,
+                    ),
+                ],
+                spacing=10,
+            ),
+            padding=15,
+        )
+        page.update()
+
+    def show_university_list_for_current_location():
+        """显示当前地区的院校列表（用于返回）"""
+        if hasattr(page, "current_location") and hasattr(page, "current_universities"):
+            show_university_list(page.current_location, page.current_universities)
+
+    def select_location(location):
+        """选择地区，在右侧显示院校列表"""
+        if not hasattr(page, "locations_data"):
+            return
+
+        location_data = None
+        for item in page.locations_data:
+            if item["location"] == location:
+                location_data = item
+                break
+
+        if location_data:
+            page.current_location = location
+            page.current_universities = location_data["universities"]
+            show_university_list(location, location_data["universities"])
+
+    def render_locations(data):
+        """渲染地区列表"""
+        locations_container.controls.clear()
+        for item in data:
+            location_card = ft.Container(
+                content=ft.Row(
+                    [
+                        ft.Text(item["location"], weight=ft.FontWeight.W_500, size=14),
+                        ft.Container(
+                            content=ft.Text(
+                                f"{item['count']}", size=11, color=ft.Colors.WHITE
+                            ),
+                            bgcolor=ft.Colors.BLUE_600,
+                            border_radius=12,
+                            padding=ft.padding.symmetric(horizontal=8, vertical=2),
+                        ),
+                    ],
+                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                ),
+                padding=ft.padding.symmetric(horizontal=12, vertical=10),
+                bgcolor=ft.Colors.GREY_100,
+                border_radius=10,
+                ink=True,
+                on_click=lambda e, loc=item["location"]: select_location(loc),
+            )
+            locations_container.controls.append(location_card)
+
+        page.locations_data = data
+        page.update()
+
+    def on_search_click(e):
+        """查询按钮点击事件"""
+        score = score_input.value
+        rank = rank_input.value
+        year = year_group.value
+        university_types = []
+        if double_first_check.value:
+            university_types.append("双一流")
+        if c9_check.value:
+            university_types.append("985")
+        if c211_check.value:
+            university_types.append("211")
+
+        # 验证输入
+        if (not score and not rank) or (score and rank):
+            page.snack_bar = ft.SnackBar(
+                content=ft.Text("请且仅输入分数或排位中的一项")
+            )
+            page.snack_bar.open = True
+            page.update()
+            return
+
+        if not year:
+            page.snack_bar = ft.SnackBar(content=ft.Text("请选择年份"))
+            page.snack_bar.open = True
+            page.update()
+            return
+
+        # 保存查询参数
+        current_query_params["score"] = int(score) if score else None
+        current_query_params["rank"] = int(rank) if rank else None
+        current_query_params["year"] = year
+
+        # 显示加载状态
+        locations_container.controls.clear()
+        locations_container.controls.append(
+            ft.Text("查询中...", color=ft.Colors.GREY_500)
+        )
+        page.update()
+
+        # 执行查询（真实数据库）
         try:
             if score:
                 result = search_by_score(
                     score=int(score),
                     year=year,
-                    university_types=types,
-                    float_range=10
+                    university_types=university_types,
+                    float_range=10,
                 )
             else:
+                # 按排位查询（需要单独实现，暂时用分数估算）
                 result = search_by_score(
                     score=int(rank) // 10,
                     year=year,
-                    university_types=types,
-                    float_range=50
+                    university_types=university_types,
+                    float_range=50,
                 )
-            Clock.schedule_once(lambda dt: self.render_result(result), 0)
         except Exception as e:
-            Clock.schedule_once(lambda dt: self.show_result_error(str(e)), 0)
-    
-    def render_result(self, data):
-        self.show_loading(False)
-        
-        if not data:
-            self.show_result_error('No universities found')
-            return
-        
-        self.locations_data = data
-        total = sum(item['count'] for item in data)
-        self.result_layout.add_widget(Label(
-            text=f'{len(data)} regions, {total} universities',
-            size_hint_y=None,
-            height=30,
-        ))
-        
-        for item in data:
-            btn = Button(
-                text=f"{item['location']} ({item['count']})",
-                size_hint_y=None,
-                height=45,
+            print(f"查询出错: {e}")
+            result = []
+
+        if result:
+            render_locations(result)
+            # 重置右侧面板
+            right_panel.content = ft.Container(
+                content=ft.Column(
+                    [
+                        ft.Text(
+                            "请选择院校查看详情", size=18, weight=ft.FontWeight.BOLD
+                        ),
+                        ft.Text("", size=12, color=ft.Colors.BLUE_600),
+                        ft.Text(
+                            "请从左侧选择地区后，再点击院校名称查看专业详情",
+                            color=ft.Colors.GREY_500,
+                            size=13,
+                        ),
+                    ],
+                    spacing=15,
+                    alignment=ft.MainAxisAlignment.CENTER,
+                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
+                padding=15,
             )
-            btn.bind(on_press=lambda x, loc=item['location'], uni=item['universities']: 
-                     self.show_university_list(loc, uni))
-            self.result_layout.add_widget(btn)
-    
-    def show_result_error(self, msg):
-        self.show_loading(False)
-        self.result_layout.clear_widgets()
-        self.result_layout.add_widget(Label(text=msg))
-    
-    def show_university_list(self, location, universities):
-        self.result_layout.clear_widgets()
-        """显示院校列表"""
-        self.current_location = location  # 保存
-        self.current_universities = universities  # 保存
+        else:
+            locations_container.controls.clear()
+            locations_container.controls.append(
+                ft.Text("未找到相关院校", color=ft.Colors.RED_600)
+            )
+            page.update()
 
-        back_btn = Button(text='< Back', size_hint_y=None, height=40)
-        back_btn.bind(on_press=lambda x: self.render_result(self.locations_data))
-        self.result_layout.add_widget(back_btn)
-        
-        self.result_layout.add_widget(Label(text=f'{location} Universities', size_hint_y=None, height=35))
-        
-        for uni in universities:
-            btn_text = f"{uni['name']} ({uni['type']})" if uni['type'] else uni['name']
-            btn = Button(text=btn_text, size_hint_y=None, height=50)
-            btn.bind(on_press=lambda x, name=uni['name']: self.show_major_details(name))
-            self.result_layout.add_widget(btn)
-    
-    def show_major_details(self, university_name):
-        """显示专业详情"""
-        self.result_layout.clear_widgets()
-        
-        # 返回按钮
-        back_btn = Button(text='< Back to Universities', size_hint_y=None, height=40)
-        back_btn.bind(on_press=lambda x: self.show_university_list_for_current())
-        self.result_layout.add_widget(back_btn)
-        
-        self.result_layout.add_widget(Label(text=f'{university_name}\nMajors', size_hint_y=None, height=50))
-        
-        try:
-            year = '2025' if self.year_2025.state == 'down' else '2024'
-            result = get_university_details(university_name=university_name, year=year)
-        except Exception as e:
-            self.result_layout.add_widget(Label(text=f'Error: {e}'))
-            return
-        
-        if not result:
-            self.result_layout.add_widget(Label(text='No data available'))
-            return
-        
-        # 显示表头
-        header_layout = BoxLayout(orientation='horizontal', size_hint_y=None, height=35, spacing=5)
-        header_layout.add_widget(Label(text='Major Name', bold=True, size_hint_x=0.4))
-        header_layout.add_widget(Label(text='2024', bold=True, size_hint_x=0.15))
-        header_layout.add_widget(Label(text='2025', bold=True, size_hint_x=0.15))
-        header_layout.add_widget(Label(text='Rank', bold=True, size_hint_x=0.15))
-        header_layout.add_widget(Label(text='Score', bold=True, size_hint_x=0.15))
-        self.result_layout.add_widget(header_layout)
-        
-        # 显示数据行
-        for item in result[:30]:  # 限制显示30条
-            row = BoxLayout(orientation='horizontal', size_hint_y=None, height=30, spacing=5)
-            
-            major_name = item.get('专业名称', 'Unknown')
-            enrollment_2024 = item.get('2024录取人数', '')
-            enrollment_2025 = item.get('2025录取人数', '')
-            rank = item.get('投档最低位次', '')
-            score = item.get('投档最低分', '')
-            
-            # 处理 None 值
-            enrollment_2024 = enrollment_2024 if enrollment_2024 else '0'
-            enrollment_2025 = enrollment_2025 if enrollment_2025 else '0'
-            rank = rank if rank else '-'
-            score = score if score else '-'
-            
-            row.add_widget(Label(text=major_name[:12], size_hint_x=0.4, font_size=11))
-            row.add_widget(Label(text=str(enrollment_2024), size_hint_x=0.15, font_size=11))
-            row.add_widget(Label(text=str(enrollment_2025), size_hint_x=0.15, font_size=11))
-            row.add_widget(Label(text=str(rank), size_hint_x=0.15, font_size=11))
-            row.add_widget(Label(text=str(score), size_hint_x=0.15, font_size=11))
-            
-            self.result_layout.add_widget(row)
-    
-    def show_university_list_for_current(self):
-        """返回到当前地区的院校列表"""
-        if hasattr(self, 'current_location') and hasattr(self, 'current_universities'):
-            self.show_university_list(self.current_location, self.current_universities)
+    # ========== 构建UI ==========
+    # 左侧查询面板
+    query_panel = ft.Card(
+        content=ft.Container(
+            content=ft.Column(
+                [
+                    ft.Text("🔍 查询条件", size=16, weight=ft.FontWeight.BOLD),
+                    ft.Row([score_input, rank_input]),
+                    ft.Text("院校类型", size=13, weight=ft.FontWeight.W_500),
+                    ft.Row([double_first_check, c9_check, c211_check]),
+                    ft.Divider(height=5),
+                    ft.Text("年份", size=13, weight=ft.FontWeight.W_500),
+                    year_group,
+                    ft.ElevatedButton(
+                        content=ft.Text("查询"), on_click=on_search_click, width=120
+                    ),
+                ],
+                spacing=12,
+            ),
+            padding=15,
+        ),
+        elevation=3,
+    )
+
+    # 左侧地区面板
+    location_panel = ft.Card(
+        content=ft.Container(
+            content=ft.Column(
+                [
+                    ft.Text("📊 院校地区分布", size=14, weight=ft.FontWeight.BOLD),
+                    ft.Container(
+                        content=ft.Column(
+                            [locations_container], scroll=ft.ScrollMode.AUTO
+                        ),
+                        height=350,
+                    ),
+                ],
+                spacing=10,
+            ),
+            padding=15,
+        ),
+        elevation=3,
+        expand=True,
+    )
+
+    # 左侧面板
+    left_panel = ft.Container(
+        width=None,
+        expand=True,
+        content=ft.Column(
+            [
+                query_panel,
+                location_panel,
+            ],
+            spacing=12,
+            expand=True,
+        ),
+    )
+
+    # 主布局 - 上下排列（手机优化）
+    main_column = ft.Column(
+        [
+            left_panel,
+            ft.Divider(height=1, visible=False),
+            right_panel,
+        ],
+        spacing=12,
+        expand=True,
+    )
+    page.add(main_column)
 
 
-class GaokaoApp(App):
-    def build(self):
-        self.title = 'Gaokao Query'
-        return MainScreen()
-
-
-if __name__ == '__main__':
-    GaokaoApp().run()
+if __name__ == "__main__":
+    ft.app(target=main)
