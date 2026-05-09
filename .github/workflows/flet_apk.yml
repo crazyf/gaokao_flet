@@ -13,11 +13,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.19.0'
-          cache: true
+      # 手动安装 Flutter 3.41.7（Flet 要求的版本）
+      - name: Install Flutter 3.41.7
+        run: |
+          git clone https://github.com/flutter/flutter.git --depth 1 -b 3.41.7 $HOME/flutter
+          echo "$HOME/flutter/bin" >> $GITHUB_PATH
 
       - uses: actions/setup-python@v5
         with:
@@ -28,18 +28,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install flet pymysql
 
-      - name: Debug file structure
+      - name: Accept Android licenses
         run: |
-          pwd
-          ls -la
-          echo "=== searching main.py ==="
-          find . -name "main.py"
-
-      - name: Add Flutter to PATH
-        run: echo "$HOME/flutter/bin" >> $GITHUB_PATH
+          yes | $HOME/flutter/bin/flutter doctor --android-licenses || true
 
       - name: Build APK
-        run: flet build apk --verbose
+        run: |
+          export PATH="$HOME/flutter/bin:$PATH"
+          flet build apk --verbose
 
       - uses: actions/upload-artifact@v4
         with:
