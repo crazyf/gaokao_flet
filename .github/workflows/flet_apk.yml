@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Flutter 3.41.7 (required by Flet)
+      - name: Install Flutter 3.41.7
         run: |
           git clone https://github.com/flutter/flutter.git --depth 1 -b 3.41.7 $HOME/flutter
           echo "$HOME/flutter/bin" >> $GITHUB_PATH
@@ -25,10 +25,21 @@ jobs:
       - name: Install dependencies
         run: pip install flet pymysql
 
-      - name: Build APK (non-interactive)
+      - name: Accept Android licenses
         run: |
           export PATH="$HOME/flutter/bin:$PATH"
-          echo "y" | flet build apk --verbose
+          yes | flutter doctor --android-licenses || true
+
+      - name: Debug - verify main.py
+        run: |
+          pwd
+          ls -la
+          test -f main.py && echo "main.py exists" || echo "main.py NOT found"
+
+      - name: Build APK
+        run: |
+          export PATH="$HOME/flutter/bin:$PATH"
+          flet build apk --verbose --module-name main
 
       - uses: actions/upload-artifact@v4
         with:
