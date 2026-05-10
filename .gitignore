@@ -5,5 +5,4 @@ __pycache__/
 .buildozer/
 bin/
 .vscode/
-#database/*.db
 *.log
